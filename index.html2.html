@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cafe Menu</title>
+<style>
+:root{--bg:#F2F5F1;--card:#fff;--ink:#1A2B29;--mute:#5E706D;--line:#D9E1DC;--acc:#0F766E;--on:#fff;--hi:#F2C94C;--warn:#C2410C}
+@media(prefers-color-scheme:dark){:root{--bg:#101B1A;--card:#182726;--ink:#E8F0EE;--mute:#9DB1AD;--line:#2A3D3B;--acc:#3CC4B5;--on:#06201D;--warn:#FB923C}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,'Noto Sans Devanagari',sans-serif}
+h1,h2{margin:0}button{font:inherit;cursor:pointer;border:0;color:inherit}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 14px;display:flex;justify-content:space-between;align-items:center;z-index:5}
+main{max-width:620px;margin:0 auto;padding:14px 14px 110px}
+.cats{display:flex;gap:8px;overflow-x:auto;margin-bottom:6px}
+.cats button{flex:none;padding:6px 14px;border-radius:99px;background:var(--card);border:1px solid var(--line)}
+.cats button.on{background:var(--ink);color:var(--bg)}
+.item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.item small{display:block;color:var(--mute)}
+.add{background:var(--acc);color:var(--on);border-radius:10px;padding:8px 16px;font-weight:600}
+.qty{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px}.qty button{background:none;width:34px;height:34px;font-size:20px;color:var(--acc)}
+.bar{position:fixed;left:0;right:0;bottom:0;padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));background:var(--bg);border-top:1px solid var(--line)}
+.bar button{display:flex;justify-content:space-between;width:100%;max-width:620px;margin:auto;background:var(--acc);color:var(--on);padding:14px 18px;border-radius:14px;font-weight:600;font-size:17px}
+.sheet{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+label{display:block;font-weight:600;margin:12px 0 4px}
+input,textarea{width:100%;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.row{display:flex;justify-content:space-between;padding:3px 0}.hint{color:var(--mute);font-size:14px}
+.big{font-size:20px;font-weight:700;padding:12px;border-radius:12px;background:var(--bg);margin:10px 0;text-align:center}
+.note{background:var(--hi);color:#1A2B29;border-radius:10px;padding:8px 12px;margin:10px 0}
+.ghost{background:none;color:var(--mute);padding:10px 0;width:100%}
+.cnl{width:100%;padding:12px;border-radius:12px;background:none;border:2px solid var(--warn);color:var(--warn);font-weight:600}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;z-index:20;padding:14px}
+.mbox{background:var(--card);border-radius:18px;padding:18px;width:100%;max-width:420px}
+.stars{display:flex;gap:6px;justify-content:center;margin:12px 0}.stars button{background:none;font-size:40px;line-height:1;color:var(--line)}.stars .on{color:#E0A800}
+.lnk{display:block;text-align:center;text-decoration:none;padding:12px;margin-top:10px}
+</style>
+</head>
+<body>
+<header><h2>☕ Cafe Menu</h2><span class="hint" id="tb"></span></header>
+<main id="app"></main><div class="bar" id="bar" hidden></div>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getFirestore,collection,addDoc,doc,onSnapshot,updateDoc} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+// ===== CONFIG: har cafe ke liye sirf yeh hissa badlein (Firebase config neeche) =====
+const CFG={cafeName:'Brew & Bite',googleReview:'https://maps.app.goo.gl/TpiMEkMFrUSWwyHU7'};
+const db=getFirestore(initializeApp({
+  apiKey:"AIzaSyCz9QKgYJojdCsVAllBAfFS58kizdhP_7E",authDomain:"qr-order-9acb1.firebaseapp.com",projectId:"qr-order-9acb1",
+  storageBucket:"qr-order-9acb1.firebasestorage.app",messagingSenderId:"686570229974",appId:"1:686570229974:web:355a68dd2ca1abb2b17977"}));
+
+let MENU=[];
+const GOOGLE_REVIEW_URL=CFG.googleReview;
+const REVIEW_DELAY=60000,CANCEL_MS=120000;
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const inr=n=>'₹'+n;
+const table=new URLSearchParams(location.search).get('table')||'1';
+const POP='🔥 सबसे ज़्यादा पसंद';
+const pop=()=>{const f=MENU.filter(m=>m.fav),t=MENU.filter(m=>!m.fav&&(m.sold||0)>0).sort((a,b)=>b.sold-a.sold);return [...f,...t].slice(0,Math.max(5,f.length))};
+const cats=()=>{const c=[...new Set(MENU.map(m=>m.c))];return pop().length?[POP,...c]:c};const byId=id=>MENU.find(m=>m.id===id);
+const ST={new:'🔴 Order bhej diya. Kitchen ke accept karne ka intezaar',prep:'🟡 Aapka order ban raha hai',ready:'🟢 Ready! Aapka order aa raha hai',done:'⚪ Order serve ho gaya',cancel:'❌ Order cancel ho gaya'};
+let cat='',cart={},screen='menu',oid=null,order=null,unsub=null,ask=false,fbOpen=false,fbTimer=null,busy=false,err='';
+const ls={get:k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+const count=()=>Object.values(cart).reduce((a,b)=>a+b,0);
+const total=()=>Object.entries(cart).reduce((s,[i,q])=>s+(byId(i)?byId(i).p*q:0),0);
+$('#tb').textContent='Table '+table;document.title=CFG.cafeName;$('header h2').textContent='☕ '+CFG.cafeName;
+
+function watch(id){if(unsub)unsub();unsub=onSnapshot(doc(db,'orders',id),s=>{
+  if(!s.exists()||Date.now()-s.data().t>6*3600e3){reset();return}
+  order={id,...s.data()};screen='track';
+  if(order.status==='done'&&!order.rating&&!fbTimer)fbTimer=setTimeout(()=>{fbOpen=true;render()},REVIEW_DELAY);
+  render()},()=>{reset()})}
+function reset(){if(unsub)unsub();unsub=null;oid=null;order=null;screen='menu';ask=false;fbOpen=false;fbTimer=null;ls.set('oid','');render()}
+
+function render(){
+  const a=$('#app'),bar=$('#bar');bar.hidden=true;
+  document.querySelectorAll('.modal').forEach(m=>m.remove());
+  if(screen==='track'&&order){
+    const o=order,can=o.status==='new'&&Date.now()-o.t<CANCEL_MS;
+    a.innerHTML=`<div class="sheet"><h2>${esc(o.name)}, dhanyavaad!</h2><p class="hint">Table ${esc(o.table)} · ${o.people} log</p>
+    <div class="big">${ST[o.status]}</div>
+    ${o.items.map(i=>`<div class="row"><span>${i.q} × ${esc(i.n)}</span><span>${inr(i.q*i.p)}</span></div>`).join('')}
+    <div class="row" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px"><b>Total</b><b>${inr(o.total)}</b></div>
+    ${o.note?`<div class="note">Aapka note: ${esc(o.note)}</div>`:''}
+    <p class="hint">Payment counter par hoga.</p>${err?`<p class="note">${esc(err)}</p>`:''}
+    ${can?`<button class="cnl" id="cnl"></button>`:''}
+    ${o.status==='prep'?'<p class="hint">Ab order cancel nahi ho sakta.</p>':''}
+    ${['done','cancel'].includes(o.status)?'<button class="add" id="again" style="width:100%;padding:13px">Naya order karo</button>':''}</div>`;
+    if(can)tick();
+    if($('#again'))$('#again').onclick=()=>{cart={};reset()};
+    if($('#cnl'))$('#cnl').onclick=async()=>{if(!ask){ask=true;tick();return}
+      try{await updateDoc(doc(db,'orders',oid),{status:'cancel'});err=''}catch(e){err='Cancel nahi ho paya. Kitchen ne order shuru kar diya hoga.'}ask=false;render()};
+    if(fbOpen)review();return}
+  if(screen==='checkout'){
+    a.innerHTML=`<div class="sheet"><h2>Order confirm karo</h2><div style="margin-top:8px">${Object.entries(cart).map(([i,q])=>`<div class="row"><span>${q} × ${esc(byId(i).n)}</span><span>${inr(q*byId(i).p)}</span></div>`).join('')}</div>
+    <div class="row" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px"><b>Total</b><b>${inr(total())}</b></div>
+    <label for="nm">Aapka naam</label><input id="nm" value="${esc(ls.get('nm'))}" placeholder="Jaise: Rahul" autocomplete="name">
+    <label for="ph">Mobile number (optional)</label><input id="ph" type="tel" inputmode="numeric" maxlength="10" value="${esc(ls.get('ph'))}"><p class="hint" style="margin:4px 0 0">Number sirf aapka pichla order yaad rakhne ke liye hai.</p>
+    <label for="pp">Kitne log?</label><input id="pp" type="number" min="1" max="30" value="2" inputmode="numeric">
+    <label for="nt">Kitchen ke liye note (optional)</label><textarea id="nt" rows="2" maxlength="200" placeholder="Jaise: spicy kam, extra namak"></textarea>
+    ${err?`<p class="note">${esc(err)}</p>`:''}
+    <button class="add" id="place" style="width:100%;padding:13px;font-size:17px;margin-top:14px">Order place karo</button>
+    <button class="ghost" id="back">← Menu par wapas</button></div>`;
+    $('#back').onclick=()=>{screen='menu';render()};
+    $('#place').onclick=async()=>{
+      const name=$('#nm').value.trim();if(!name){$('#nm').focus();return}
+      if(busy)return;busy=true;$('#place').textContent='Bhej raha hai...';
+      const data={table,name,phone:$('#ph').value.trim(),people:Math.max(1,Math.min(30,+$('#pp').value||1)),note:$('#nt').value.trim(),
+        items:Object.entries(cart).filter(([i])=>byId(i)).map(([i,q])=>({id:i,n:byId(i).n,h:byId(i).h||byId(i).n,p:byId(i).p,q})),total:total(),status:'new',t:Date.now()};
+      try{const r=await addDoc(collection(db,'orders'),data);ls.set('nm',data.name);ls.set('ph',data.phone);oid=r.id;ls.set('oid',oid);cart={};err='';watch(oid)}
+      catch(e){err='Order nahi ja paya. Internet check karke dobara try karein.'}
+      busy=false;render()};
+    return}
+  if(!MENU.length){a.innerHTML='<p class="hint">Menu load ho raha hai...</p>';return}
+  if(!cats().includes(cat))cat=cats()[0];
+  a.innerHTML=`<div class="cats">${cats().map(c=>`<button class="${c===cat?'on':''}" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>`+
+  MENU.map((m,_,__,i=m.id)=>(cat===POP?!pop().includes(m):m.c!==cat)?'':`<div class="item"><div><b>${esc(m.n)}</b><small>${esc(m.d)}</small><b>${inr(m.p)}</b></div>${cart[i]?`<div class="qty"><button data-m="${i}">−</button><b>${cart[i]}</b><button data-p="${i}">+</button></div>`:`<button class="add" data-p="${i}">Add</button>`}</div>`).join('');
+  a.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{cat=b.dataset.c;render()});
+  a.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{const i=b.dataset.p;cart[i]=(cart[i]||0)+1;render()});
+  a.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{const i=b.dataset.m;if(--cart[i]<=0)delete cart[i];render()});
+  if(count()){bar.hidden=false;bar.innerHTML=`<button id="go"><span>${count()} item · ${inr(total())}</span><span>Order dekho</span></button>`;$('#go').onclick=()=>{screen='checkout';render();scrollTo(0,0)}}
+}
+function tick(){const b=$('#cnl');if(!b||!order)return;const s=Math.ceil((CANCEL_MS-(Date.now()-order.t))/1000);
+  if(s<=0){render();return}b.textContent=`${ask?'हाँ, पक्का cancel करें':'Order cancel karein'} (${Math.floor(s/60)}:${String(s%60).padStart(2,'0')})`}
+setInterval(tick,1000);
+
+function review(){const o=order,r=o.rating||0,m=document.createElement('div');m.className='modal';
+  m.innerHTML=`<div class="mbox"><h2>${esc(o.name)}, khana kaisa laga?</h2><div class="stars">${[1,2,3,4,5].map(n=>`<button data-s="${n}" class="${n<=r?'on':''}">★</button>`).join('')}</div>
+  ${r&&r<=3?'<textarea id="fbt" rows="2" placeholder="Kya behtar ho sakta tha? (sirf cafe ko dikhega)"></textarea>':''}
+  ${r?`<a class="add lnk" href="${GOOGLE_REVIEW_URL}" target="_blank" rel="noopener">Google par review likhein</a>`:''}
+  <button class="ghost" id="fbx">${r?'Band karein':'Baad mein'}</button></div>`;
+  document.body.appendChild(m);
+  m.querySelectorAll('[data-s]').forEach(b=>b.onclick=async()=>{try{await updateDoc(doc(db,'orders',oid),{rating:+b.dataset.s})}catch(e){}});
+  m.querySelector('#fbx').onclick=async()=>{const t=m.querySelector('#fbt');if(t&&t.value.trim()){try{await updateDoc(doc(db,'orders',oid),{fb:t.value.trim().slice(0,300)})}catch(e){}}fbOpen=false;render()}}
+
+onSnapshot(collection(db,'menu'),sn=>{MENU=sn.docs.map(d=>({id:d.id,...d.data()})).filter(m=>m.on!==false).sort((a,b)=>(a.o||0)-(b.o||0));
+  for(const id of Object.keys(cart))if(!byId(id))delete cart[id];
+  if(screen==='menu')render()},()=>{});
+oid=ls.get('oid');if(oid)watch(oid);else render();
+</script>
+</body>
+</html>
