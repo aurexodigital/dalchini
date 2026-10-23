@@ -80,6 +80,8 @@ async function loadSum(){try{const d=new Date();d.setHours(0,0,0,0);const s=awai
   const all=s.docs.map(x=>x.data()).filter(o=>o.status!=='cancel'),cnt={};let rev=0;all.forEach(o=>{rev+=o.total;o.items.forEach(i=>cnt[i.n]=(cnt[i.n]||0)+i.q)});
   sum={n:all.length,c:s.size-all.length,rev,top:Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,5)};msg=''}catch(e){msg='Sarankh load nahi hua: '+e.code}render()}
 
+const AM={'auth/invalid-credential':'Email ya password galat hai, ya yeh user is Firebase project ke Authentication mein bana hi nahi hai.','auth/wrong-password':'Password galat hai.','auth/user-not-found':'Yeh email is Firebase project ke Authentication mein nahi hai.','auth/invalid-email':'Email sahi format mein likhein.','auth/operation-not-allowed':'Firebase > Authentication > Sign-in method mein Email/Password chalu karein.','auth/network-request-failed':'Internet check karein.','auth/too-many-requests':'Bahut baar galat try hua, thodi der baad dobara try karein.','auth/invalid-api-key':'Firebase config (apiKey) galat hai.','auth/api-key-not-valid.-please-pass-a-valid-api-key.':'Firebase config (apiKey) galat hai.','auth/unauthorized-domain':'Firebase > Authentication > Settings > Authorized domains mein yeh website jodein.'};
+const authMsg=e=>'Login nahi hua. '+(AM[e.code]||'Dobara try karein.')+' ['+(e.code||'error')+']';
 onAuthStateChanged(auth,u=>{user=u;[uo,um,uc].forEach(f=>f&&f());uo=um=uc=null;orders=[];ms={};calls=[];first=true;firstC=true;
   if(u){
     uo=onSnapshot(query(collection(db,'orders'),where('t','>',Date.now()-4*3600e3),orderBy('t','desc')),snap=>{
@@ -94,7 +96,7 @@ onAuthStateChanged(auth,u=>{user=u;[uo,um,uc].forEach(f=>f&&f());uo=um=uc=null;o
 
 function render(){const a=$('#app');
   if(!user){a.innerHTML=`<h1>Kitchen login</h1><p class="hint">Sirf cafe staff ke liye.</p><input id="em" type="email" placeholder="Email" autocomplete="username" value="${esc(lastEm)}"><input id="pw" type="password" placeholder="Password" autocomplete="current-password"><button class="btn" id="li">Login</button><p class="err">${esc(msg)}</p>`;
-    $('#li').onclick=async()=>{lastEm=$('#em').value.trim();try{await signInWithEmailAndPassword(auth,lastEm,$('#pw').value)}catch(e){msg='Login nahi hua. Email ya password galat hai.';render()}};return}
+    $('#li').onclick=async()=>{lastEm=$('#em').value.trim();try{await signInWithEmailAndPassword(auth,lastEm,$('#pw').value)}catch(e){msg=authMsg(e);render()}};return}
   const nn=orders.filter(o=>o.status==='new').length;let body='';
   if(tab==='o'){
     const vis=orders.filter(o=>showDone||!['done','cancel'].includes(o.status)),hid=orders.length-vis.length;
